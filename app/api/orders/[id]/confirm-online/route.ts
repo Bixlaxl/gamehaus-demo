@@ -159,22 +159,30 @@ export async function POST(
     }
   })() : Promise.resolve();
 
+  const { data: updatedOrder, error: updateErr } = await admin
+    .from("orders")
+    .update({
+      status: "open",
+      subtotal: bill.subtotal,
+      discount_amount: totalDiscount,
+      public_discount_amount: (order as any).public_discount_amount ?? 0,
+      total_amount: bill.subtotal - totalDiscount,
+      ...(order.advance_paid > 0
+        ? {}
+        : { advance_paid: typeof body.amount_paid === "number" ? body.amount_paid : netAdvancePaid }),
+      amount_due: Math.max(0, (bill.subtotal - totalDiscount) - (order.advance_paid > 0 ? order.advance_paid : (typeof body.amount_paid === "number" ? body.amount_paid : netAdvancePaid))),
+      membership_id: order.membership_id ?? primaryMembership?.id ?? null,
+    })
+    .eq("id", orderId)
+    .select();
+
+  if (updateErr) {
+    console.error("[Database Update Error]", updateErr);
+    return NextResponse.json(err(updateErr.message + " (" + updateErr.code + ")", "DATABASE_ERROR"), { status: 500 });
+  }
+
+  // Run bookings and memberships updates in parallel
   await Promise.all([
-    admin
-      .from("orders")
-      .update({
-        status: "open",
-        subtotal: bill.subtotal,
-        discount_amount: totalDiscount,
-        public_discount_amount: (order as any).public_discount_amount ?? 0,
-        total_amount: bill.subtotal - totalDiscount,
-        ...(order.advance_paid > 0
-          ? {}
-          : { advance_paid: typeof body.amount_paid === "number" ? body.amount_paid : netAdvancePaid }),
-        amount_due: Math.max(0, (bill.subtotal - totalDiscount) - (order.advance_paid > 0 ? order.advance_paid : (typeof body.amount_paid === "number" ? body.amount_paid : netAdvancePaid))),
-        membership_id: order.membership_id ?? primaryMembership?.id ?? null,
-      })
-      .eq("id", orderId),
     bookingsPromise,
     ...membershipUpdatePromises,
   ]);
