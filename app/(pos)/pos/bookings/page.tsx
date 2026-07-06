@@ -18,7 +18,8 @@ export default async function StaffBookingsPage() {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) redirect("/login");
 
-  const { data: profile } = await supabase
+  const admin = createAdminClient();
+  const { data: profile } = await admin
     .from("users")
     .select(`
       role, name, location_id,
@@ -26,8 +27,6 @@ export default async function StaffBookingsPage() {
     `)
     .eq("id", session.user.id)
     .single();
-
-  const admin = createAdminClient();
   let locationId = profile?.location_id;
   let location = profile?.location as any;
 
