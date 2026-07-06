@@ -26,10 +26,25 @@ export default async function StaffBookingsPage() {
     `)
     .eq("id", session.user.id)
     .single();
-  if (!profile?.location_id || !profile.location) redirect("/pos");
 
-  const location = profile.location as any;
   const admin = createAdminClient();
+  let locationId = profile?.location_id;
+  let location = profile?.location as any;
+
+  if (profile?.role === "owner" && !locationId) {
+    const { data: firstLoc } = await admin
+      .from("locations")
+      .select("id, name, opening_time, closing_time")
+      .eq("is_active", true)
+      .limit(1)
+      .maybeSingle();
+    if (firstLoc) {
+      locationId = firstLoc.id;
+      location = firstLoc;
+    }
+  }
+
+  if (!locationId || !location) redirect("/pos");
 
   const opening = location?.opening_time ?? "10:00";
   const closing = location?.closing_time ?? "23:00";
@@ -59,7 +74,7 @@ export default async function StaffBookingsPage() {
   const ownLocationBookings = (bookings ?? [])
     .filter((b) => {
       const t = (b.order_item as { table?: { location?: { id?: string } } } | null)?.table;
-      return t?.location?.id === profile.location_id;
+      return t?.location?.id === locationId;
     })
     .filter((b: any) => {
       const o = b.order;
@@ -78,7 +93,7 @@ export default async function StaffBookingsPage() {
     <main className="pos-bookings-dark flex-1 overflow-y-auto p-6">
       <BookingsContent
         mode="staff"
-        staffLocationId={profile.location_id}
+        staffLocationId={locationId}
         initialLocations={location ? [location] : []}
         initialBookings={ownLocationBookings}
       />
