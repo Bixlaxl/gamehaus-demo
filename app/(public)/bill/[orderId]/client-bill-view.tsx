@@ -1,6 +1,6 @@
 "use client";
 
-import { Printer, Download, ArrowLeft, CheckCircle2, Gamepad2 } from "lucide-react";
+import { Printer, Download, ArrowLeft, CheckCircle2, Gamepad2, XCircle, AlertCircle } from "lucide-react";
 import Link from "next/link";
 
 interface ClientBillViewProps {
@@ -44,6 +44,9 @@ export function ClientBillView({ order }: ClientBillViewProps) {
   const pointsRedeemed = Number(order.points_redeemed) || 0;
   const amountDue = Number(order.amount_due) || 0;
   const totalPaid = advancePaid + amountDue;
+  const refundedAmount = (order.payments || [])
+    .filter((p: any) => p.status === "completed" && p.amount < 0)
+    .reduce((sum: number, p: any) => sum + Math.abs(p.amount), 0);
 
   function handlePrint() {
     window.print();
@@ -102,14 +105,34 @@ export function ClientBillView({ order }: ClientBillViewProps) {
         </div>
 
         {/* Status Badge */}
-        <div className="bg-emerald-50 dark:bg-emerald-950/20 px-6 py-3 border-b border-emerald-100 dark:border-emerald-900/30 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400 font-bold text-xs uppercase tracking-wider">
-            <CheckCircle2 className="h-4 w-4" /> Bill Paid & Finalized
+        {order.status === "cancelled" ? (
+          <div className="bg-rose-50 dark:bg-rose-950/20 px-6 py-3 border-b border-rose-100 dark:border-rose-900/30 flex items-center justify-between">
+            <div className="flex items-center gap-2 text-rose-700 dark:text-rose-400 font-bold text-xs uppercase tracking-wider">
+              <XCircle className="h-4 w-4" /> Order Cancelled & Refunded
+            </div>
+            <span className="text-xs font-mono font-semibold text-gray-500">
+              {fmtDateTime(order.finalized_at || order.created_at, location.timezone)}
+            </span>
           </div>
-          <span className="text-xs font-mono font-semibold text-gray-500">
-            {fmtDateTime(order.finalized_at || order.created_at, location.timezone)}
-          </span>
-        </div>
+        ) : order.status === "open" ? (
+          <div className="bg-amber-50 dark:bg-amber-950/20 px-6 py-3 border-b border-amber-100 dark:border-amber-900/30 flex items-center justify-between">
+            <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 font-bold text-xs uppercase tracking-wider">
+              <AlertCircle className="h-4 w-4" /> Active / Unpaid Session
+            </div>
+            <span className="text-xs font-mono font-semibold text-gray-500">
+              {fmtDateTime(order.finalized_at || order.created_at, location.timezone)}
+            </span>
+          </div>
+        ) : (
+          <div className="bg-emerald-50 dark:bg-emerald-950/20 px-6 py-3 border-b border-emerald-100 dark:border-emerald-900/30 flex items-center justify-between">
+            <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400 font-bold text-xs uppercase tracking-wider">
+              <CheckCircle2 className="h-4 w-4" /> Bill Paid & Finalized
+            </div>
+            <span className="text-xs font-mono font-semibold text-gray-500">
+              {fmtDateTime(order.finalized_at || order.created_at, location.timezone)}
+            </span>
+          </div>
+        )}
 
         {/* Customer & Order Meta */}
         <div className="p-6 border-b border-gray-100 dark:border-[#1f1f1f] grid grid-cols-2 gap-4 text-sm">
@@ -224,9 +247,15 @@ export function ClientBillView({ order }: ClientBillViewProps) {
             )}
 
             <div className="flex justify-between text-base font-black pt-3 border-t border-gray-200 dark:border-[#2A2A2A] text-gray-900 dark:text-white">
-              <span>Total Amount</span>
-              <span className="font-mono text-[#D4541A]">{formatCurrency(totalPaid)}</span>
+              <span>{order.status === "cancelled" ? "Original Total" : "Total Amount"}</span>
+              <span className={`font-mono ${order.status === "cancelled" ? "text-gray-500 line-through" : "text-[#D4541A]"}`}>{formatCurrency(totalPaid)}</span>
             </div>
+            {order.status === "cancelled" && (
+              <div className="flex justify-between text-base font-black text-rose-600 dark:text-rose-400">
+                <span>Net Amount Paid</span>
+                <span className="font-mono">{formatCurrency(Math.max(0, totalPaid - refundedAmount))}</span>
+              </div>
+            )}
 
             {/* Payments summary */}
             <div className="pt-4 space-y-1.5 text-xs bg-gray-50 dark:bg-[#161616] p-4 rounded-2xl border border-gray-100 dark:border-[#222]">
@@ -237,12 +266,19 @@ export function ClientBillView({ order }: ClientBillViewProps) {
                   <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">{formatCurrency(advancePaid)}</span>
                 </div>
               )}
-              {activePayments.map((p: any) => (
-                <div key={p.id} className="flex justify-between text-gray-700 dark:text-[#ccc]">
-                  <span className="capitalize">Collected at venue ({p.method})</span>
-                  <span className="font-mono font-bold text-gray-900 dark:text-white">{formatCurrency(p.amount)}</span>
-                </div>
-              ))}
+              {activePayments.map((p: any) => {
+                const isRefund = p.amount < 0;
+                return (
+                  <div key={p.id} className="flex justify-between text-gray-700 dark:text-[#ccc]">
+                    <span className="capitalize">
+                      {isRefund ? `Refunded via ${p.method}` : `Collected at venue (${p.method})`}
+                    </span>
+                    <span className={`font-mono font-bold ${isRefund ? "text-rose-600 dark:text-rose-400" : "text-gray-900 dark:text-white"}`}>
+                      {isRefund ? `-${formatCurrency(Math.abs(p.amount))}` : formatCurrency(p.amount)}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
