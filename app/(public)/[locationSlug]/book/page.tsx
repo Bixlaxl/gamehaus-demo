@@ -715,6 +715,8 @@ export default function CheckoutPage() {
         body: JSON.stringify({
           coupon_code: (paymentMode === "full" && couponState.status === "valid") ? couponState.code : undefined,
           customer_phone: phone.trim(),
+          payment_mode: paymentMode,
+          amount_paid: amountToPay,
         }),
       });
       const finBody = await finRes.json();

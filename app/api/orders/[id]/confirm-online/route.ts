@@ -16,6 +16,8 @@ export async function POST(
   const body = await request.json().catch(() => ({})) as {
     coupon_code?: string;
     customer_phone?: string;
+    payment_mode?: "advance" | "full";
+    amount_paid?: number;
   };
 
   // Fetch order, items, and extras in parallel
@@ -165,15 +167,11 @@ export async function POST(
         subtotal: bill.subtotal,
         discount_amount: totalDiscount,
         public_discount_amount: (order as any).public_discount_amount ?? 0,
-        total_amount: netAdvancePaid,
-        // Guard: only overwrite advance_paid if the Razorpay webhook hasn't already
-        // written the real payment amount. Webhook fires async — if it won the race
-        // first (advance_paid > 0 on the order), preserve that value.
-        // For fully-free orders (free hours covering 100%), both values are 0 — safe.
+        total_amount: bill.subtotal - totalDiscount,
         ...(order.advance_paid > 0
           ? {}
-          : { advance_paid: netAdvancePaid }),
-        amount_due: 0,
+          : { advance_paid: typeof body.amount_paid === "number" ? body.amount_paid : netAdvancePaid }),
+        amount_due: Math.max(0, (bill.subtotal - totalDiscount) - (order.advance_paid > 0 ? order.advance_paid : (typeof body.amount_paid === "number" ? body.amount_paid : netAdvancePaid))),
         membership_id: order.membership_id ?? primaryMembership?.id ?? null,
       })
       .eq("id", orderId),
@@ -181,10 +179,11 @@ export async function POST(
     ...membershipUpdatePromises,
   ]);
 
-  if (netAdvancePaid > 0) {
+  const actualPaid = typeof body.amount_paid === "number" ? body.amount_paid : netAdvancePaid;
+  if (actualPaid > 0) {
     await admin.from("payments").insert({
       order_id: orderId,
-      amount: netAdvancePaid,
+      amount: actualPaid,
       method: "upi", // demo upi
       status: "completed" as const,
       collected_at: now.toISOString(),
